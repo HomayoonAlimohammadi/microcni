@@ -1,0 +1,5 @@
+cluster-config:
+  network:
+    enabled: false
+  metrics-server:
+    enabled: false

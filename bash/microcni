@@ -1,0 +1,100 @@
+#!/bin/bash
+log=/var/log/cni.log
+config=`cat /dev/stdin`
+
+echo >> $log
+echo "COMMAND: $CNI_COMMAND" >> $log
+echo "IF: $CNI_IFNAME" >> $log
+echo "NETNS: $CNI_NETNS" >> $log
+echo "CONT_ID: $CNI_CONTAINERID" >> $log
+echo "STD IN: $config" >> $log
+
+case $CNI_COMMAND in
+ADD)
+    podcidr=$(echo $config | jq -r ".podcidr")
+    podcidr_gw=$(echo $podcidr | sed "s:0/24:1:g")
+    ip link add cni0 type bridge
+    ip link set cni0 up
+    ip addr add "${podcidr_gw}/24" dev cni0
+
+    # calculate $ip
+    if [ -f /tmp/last_allocated_ip ]; then
+        n=`cat /tmp/last_allocated_ip`
+    else
+        n=1
+    fi
+    n=$(($n+1))
+    ip=$(echo $podcidr | sed "s:0/24:$n:g")
+    echo $n > /tmp/last_allocated_ip
+
+    host_ifname="veth$n"
+    pod_ifname="pod$n"
+    ip link add $host_ifname type veth peer name $pod_ifname
+    ip link set $host_ifname up
+
+    cont_netns=$(basename $CNI_NETNS)
+    ip link set $host_ifname master cni0
+    ip link set $pod_ifname netns $cont_netns
+
+    ip -n $cont_netns link set $pod_ifname name $CNI_IFNAME
+    ip -n $cont_netns link set $CNI_IFNAME up
+    ip -n $cont_netns addr add $ip/24 dev $CNI_IFNAME
+    ip -n $cont_netns route add default via $podcidr_gw
+
+    mac=$(ip -n $cont_netns link show $CNI_IFNAME | awk '/ether/ {print $2}')
+    address="${ip}/24"
+
+    output_template='
+{
+  "cniVersion": "0.3.1",
+  "interfaces": [                                            
+      {
+          "name": "%s",
+          "mac": "%s",                            
+          "sandbox": "%s" 
+      }
+  ],
+  "ips": [
+      {
+          "version": "4",
+          "address": "%s",
+          "gateway": "%s",          
+          "interface": 0 
+      }
+  ]
+}' 
+    
+    output=$(printf "${output_template}" $CNI_IFNAME $mac $CNI_NETNS $address $podcidr_gw)
+    echo "OUTPUT: $output" >> $log
+    echo "$output"
+    
+;;
+
+DEL)
+    if [ -f /tmp/last_allocated_ip ]; then
+        n=`cat /tmp/last_allocated_ip`
+    	host_ifname="veth$n"
+    	ip link del $host_ifname
+	echo "DELETED $host_ifname" >> $log
+    else
+        echo "NO IP TO DELETE" >> $log
+    fi
+    
+;;
+
+GET)
+;;
+
+VERSION)
+echo '{
+  "cniVersion": "0.3.1", 
+  "supportedVersions": [ "0.3.0", "0.3.1", "0.4.0" ] 
+}'
+;;
+
+*)
+  echo "Unknown cni command: $CNI_COMMAND" 
+  exit 1
+;;
+
+esac
