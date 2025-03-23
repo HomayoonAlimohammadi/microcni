@@ -1,2 +1,4 @@
+OUTPUT_DIR := _output/bin/
+
 all:
-	go build -o _output/microcni .
+	go build -o ${OUTPUT_DIR} ./cmd/microcni/
