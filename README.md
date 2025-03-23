@@ -1,5 +1,11 @@
 # MicroCNI - A Minimal Container Network Interface Plugin
 
+Based on the article:
+### [Container Network Interface (CNI) In Kubernetes: An Introduction](https://itnext.io/container-network-interface-cni-in-kubernetes-an-introduction-6cd453b622bd)
+
+![CNI flow](./docs/assets/cni-call-flow.webp)
+![Pod connectivity](./docs/assets/cni-connectivity.webp)
+
 1. Place the `microcni.conf` file in the `/etc/cni/net.d/` directory.
   a. Make sure the "podcidr" is different for each node.
 
